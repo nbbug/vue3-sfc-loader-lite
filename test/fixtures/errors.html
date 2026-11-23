@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>vue3-sfc-loader-lite - errors</title>
+</head>
+<body>
+  <script src="/vue/vue.global.prod.js"></script>
+  <script src="/dist/vue3-sfc-loader-lite.js"></script>
+  <script>
+    window.__done = false
+    window.__error = null
+    window.addEventListener('error', (event) => {
+      window.__error = String((event.error && (event.error.stack || event.error.message)) || event.message)
+      window.__done = true
+    })
+    window.addEventListener('unhandledrejection', (event) => {
+      window.__error = String((event.reason && (event.reason.stack || event.reason.message)) || event.reason)
+      window.__done = true
+    })
+
+    ;(async () => {
+      const logs = []
+      const results = {}
+      const baseOptions = () => ({
+        moduleCache: { vue: Vue },
+        async getFile(url) {
+          if (url === '/bad-template.vue') {
+            return '<template><div v-if></div></template>'
+          }
+          if (url === '/setup.vue') {
+            return '<script setup>const x = 1<\/script>'
+          }
+          if (url === '/missing.vue') {
+            const response = await fetch(url)
+            if (!response.ok) throw new Error('404 ' + url)
+          }
+          throw new Error('404 ' + url)
+        },
+        addStyle() {},
+        log(type, ...args) {
+          logs.push([type, ...args.map(String)])
+        },
+      })
+
+      try {
+        await window['vue3-sfc-loader-lite'].loadModule('/bad-template.vue', baseOptions())
+        results.templateRejected = false
+      } catch (error) {
+        results.templateRejected = true
+        results.templateError = String(error.message)
+      }
+
+      try {
+        await window['vue3-sfc-loader-lite'].loadModule('/setup.vue', baseOptions())
+        results.setupRejected = false
+      } catch (error) {
+        results.setupRejected = true
+        results.setupError = String(error.message)
+      }
+
+      try {
+        await window['vue3-sfc-loader-lite'].loadModule('/missing.vue', baseOptions())
+        results.missingRejected = false
+      } catch (error) {
+        results.missingRejected = true
+        results.missingError = String(error.message)
+      }
+
+      results.logs = logs
+      window.__result = results
+      window.__done = true
+    })().catch((error) => {
+      window.__error = String((error && (error.stack || error.message)) || error)
+      window.__done = true
+    })
+  </script>
+</body>
+</html>

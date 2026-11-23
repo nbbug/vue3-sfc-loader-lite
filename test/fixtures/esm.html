@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>vue3-sfc-loader-lite - ESM build</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.__done = false
+    window.__error = null
+    window.addEventListener('error', (event) => {
+      window.__error = String((event.error && (event.error.stack || event.error.message)) || event.message)
+      window.__done = true
+    })
+    window.addEventListener('unhandledrejection', (event) => {
+      window.__error = String((event.reason && (event.reason.stack || event.reason.message)) || event.reason)
+      window.__done = true
+    })
+  </script>
+  <script type="module">
+    import * as Vue from '/vue/vue.runtime.esm-browser.prod.js'
+    import { loadModule, version, vueVersion, compilerVersion } from '/dist/vue3-sfc-loader-lite.esm.js'
+
+    try {
+      const options = {
+        moduleCache: { vue: Vue },
+        async getFile(url) {
+          const response = await fetch(url)
+          if (!response.ok) throw new Error(response.status + ' ' + url)
+          return await response.text()
+        },
+        addStyle(textContent) {
+          const style = Object.assign(document.createElement('style'), { textContent })
+          document.head.appendChild(style)
+        },
+      }
+
+      const component = await loadModule('/fixtures/basic-app.vue', options)
+      Vue.createApp(component).mount('#app')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      const root = document.querySelector('#app')
+      window.__result = {
+        text: root.textContent.trim(),
+        hasScopedAttribute: [...root.querySelectorAll('*')].some((el) =>
+          [...el.attributes].some((attribute) => attribute.name.startsWith('data-v-')),
+        ),
+        version,
+        vueVersion,
+        compilerVersion,
+        cacheKeys: Object.keys(options.moduleCache).sort(),
+      }
+    } catch (error) {
+      window.__error = String((error && (error.stack || error.message)) || error)
+    } finally {
+      window.__done = true
+    }
+  </script>
+</body>
+</html>

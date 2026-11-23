@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>vue3-sfc-loader-lite - ESM example</title>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import * as Vue from 'https://unpkg.com/vue@3/dist/vue.runtime.esm-browser.prod.js'
+    import { loadModule } from '../dist/vue3-sfc-loader-lite.esm.js'
+
+    const options = {
+      moduleCache: { vue: Vue },
+      async getFile(url) {
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(res.statusText + ' ' + url)
+        return await res.text()
+      },
+      addStyle(textContent) {
+        const style = Object.assign(document.createElement('style'), { textContent })
+        document.head.appendChild(style)
+      },
+    }
+
+    Vue.createApp(
+      Vue.defineAsyncComponent(() => loadModule('./hello.vue', options)),
+    ).mount('#app')
+  </script>
+</body>
+</html>

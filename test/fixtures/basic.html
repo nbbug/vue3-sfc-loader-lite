@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>vue3-sfc-loader-lite - UMD basic</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/vue/vue.global.prod.js"></script>
+  <script src="/dist/vue3-sfc-loader-lite.js"></script>
+  <script>
+    window.__done = false
+    window.__error = null
+    window.__logs = []
+    window.addEventListener('error', (event) => {
+      window.__error = String((event.error && (event.error.stack || event.error.message)) || event.message)
+      window.__done = true
+    })
+    window.addEventListener('unhandledrejection', (event) => {
+      window.__error = String((event.reason && (event.reason.stack || event.reason.message)) || event.reason)
+      window.__done = true
+    })
+
+    ;(async () => {
+      try {
+        const api = window['vue3-sfc-loader-lite']
+        const alias = window['vue3-sfc-loader']
+        const options = {
+          moduleCache: { vue: Vue },
+          async getFile(url) {
+            const response = await fetch(url)
+            if (!response.ok) {
+              throw Object.assign(new Error(response.statusText + ' ' + url), {
+                res: response,
+              })
+            }
+            return {
+              getContentData: (asBinary) =>
+                asBinary ? response.arrayBuffer() : response.text(),
+            }
+          },
+          addStyle(textContent) {
+            const style = Object.assign(document.createElement('style'), { textContent })
+            const ref = document.head.getElementsByTagName('style')[0] || null
+            document.head.insertBefore(style, ref)
+          },
+          log(type, ...args) {
+            console[type](...args)
+            window.__logs.push([type, ...args.map(String)])
+          },
+        }
+
+        const component = await api.loadModule('/fixtures/basic-app.vue', options)
+        window.__component = component
+        Vue.createApp(component).mount('#app')
+
+        await new Promise((resolve) => setTimeout(resolve, 50))
+
+        const root = document.querySelector('#app')
+        const appNode = root.querySelector('.app')
+        window.__result = {
+          text: root.textContent.trim(),
+          hasScopedAttribute: [...root.querySelectorAll('*')].some((el) =>
+            [...el.attributes].some((attribute) => attribute.name.startsWith('data-v-')),
+          ),
+          color: getComputedStyle(appNode).color,
+          hasAlias: !!alias,
+          exportsAlias: Object.keys(alias).sort(),
+          version: api.version,
+          vueVersion: api.vueVersion,
+          cacheKeys: Object.keys(options.moduleCache).sort(),
+          logs: window.__logs,
+        }
+      } catch (error) {
+        window.__error = String((error && (error.stack || error.message)) || error)
+      } finally {
+        window.__done = true
+      }
+    })()
+  </script>
+</body>
+</html>

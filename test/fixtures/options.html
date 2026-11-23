@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>vue3-sfc-loader-lite - options</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/vue/vue.global.prod.js"></script>
+  <script src="/dist/vue3-sfc-loader-lite.js"></script>
+  <script>
+    window.__done = false
+    window.__error = null
+    window.__logs = []
+    window.addEventListener('error', (event) => {
+      window.__error = String((event.error && (event.error.stack || event.error.message)) || event.message)
+      window.__done = true
+    })
+    window.addEventListener('unhandledrejection', (event) => {
+      window.__error = String((event.reason && (event.reason.stack || event.reason.message)) || event.reason)
+      window.__done = true
+    })
+
+    ;(async () => {
+      try {
+        const cacheStorage = {}
+        let cacheGets = 0
+        let cacheSets = 0
+        const hookCalls = []
+        const blockCalls = []
+        const handleCalls = []
+
+        const options = {
+          moduleCache: {
+            vue: Vue,
+            'my-utils': {
+              format: (value) => 'F:' + value,
+            },
+          },
+          async getFile(url) {
+            const response = await fetch(url)
+            if (!response.ok) {
+              throw Object.assign(new Error(response.statusText + ' ' + url), {
+                res: response,
+              })
+            }
+            return {
+              getContentData: (asBinary) =>
+                asBinary ? response.arrayBuffer() : response.text(),
+            }
+          },
+          addStyle(textContent) {
+            const style = Object.assign(document.createElement('style'), { textContent })
+            document.head.appendChild(style)
+          },
+          compiledCache: {
+            async get(key) {
+              cacheGets++
+              return cacheStorage[key]
+            },
+            async set(key, value) {
+              cacheSets++
+              cacheStorage[key] = value
+            },
+          },
+          customBlockHandler(block) {
+            blockCalls.push({ type: block.type, content: block.content.trim() })
+            return (component) => {
+              component.i18n = block.content.trim()
+            }
+          },
+          loadModule(id) {
+            hookCalls.push(id)
+            if (id === '/fixtures/hooked.vue') {
+              return {
+                name: 'Hooked',
+                render() {
+                  return Vue.h('b', { id: 'hooked' }, 'hooked')
+                },
+              }
+            }
+            return undefined
+          },
+          handleModule(type, getContentData) {
+            handleCalls.push(type)
+            if (type === '.txt') {
+              return getContentData(false)
+            }
+            return undefined
+          },
+          log(type, ...args) {
+            console[type](...args)
+            window.__logs.push([type, ...args.map(String)])
+          },
+        }
+
+        const component = await window['vue3-sfc-loader-lite'].loadModule(
+          '/fixtures/options-app.vue',
+          options,
+        )
+        Vue.createApp(component).mount('#app')
+        await new Promise((resolve) => setTimeout(resolve, 50))
+
+        document.querySelector('#load').click()
+        await new Promise((resolve) => setTimeout(resolve, 100))
+
+        window.__result = {
+          componentI18n: component.i18n,
+          lazyError: window.__lazyError ?? null,
+          loadLazyCalls: window.__loadLazyCalls ?? 0,
+          buttonExists: !!document.querySelector('#load'),
+          lazyModuleKeys: window.__lazyModule ? Object.keys(window.__lazyModule) : null,
+          i18nOption: component.i18n,
+          text: document.querySelector('#app').textContent.trim(),
+          util: document.querySelector('#util').textContent,
+          json: document.querySelector('#json').textContent,
+          i18n: document.querySelector('#i18n').textContent,
+          message: document.querySelector('#message').textContent,
+          hooked: document.querySelector('#hooked')?.textContent,
+          lazy: document.querySelector('#lazy')?.textContent,
+          cacheGets,
+          cacheSets,
+          hookCalls,
+          blockCalls,
+          handleCalls: [...new Set(handleCalls)],
+          cacheKeys: Object.keys(options.moduleCache).sort(),
+        }
+      } catch (error) {
+        window.__error = String((error && (error.stack || error.message)) || error)
+      } finally {
+        window.__done = true
+      }
+    })()
+  </script>
+</body>
+</html>

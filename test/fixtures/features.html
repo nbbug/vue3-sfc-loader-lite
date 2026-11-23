@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>vue3-sfc-loader-lite - template features</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="/vue/vue.global.prod.js"></script>
+  <script src="/dist/vue3-sfc-loader-lite.js"></script>
+  <script>
+    window.__done = false
+    window.__error = null
+    window.addEventListener('error', (event) => {
+      window.__error = String((event.error && (event.error.stack || event.error.message)) || event.message)
+      window.__done = true
+    })
+    window.addEventListener('unhandledrejection', (event) => {
+      window.__error = String((event.reason && (event.reason.stack || event.reason.message)) || event.reason)
+      window.__done = true
+    })
+
+    ;(async () => {
+      try {
+        const options = {
+          moduleCache: { vue: Vue },
+          async getFile(url) {
+            const response = await fetch(url)
+            if (!response.ok) throw new Error(response.status + ' ' + url)
+            return await response.text()
+          },
+          addStyle(textContent) {
+            const style = Object.assign(document.createElement('style'), { textContent })
+            document.head.appendChild(style)
+          },
+        }
+        const component = await window['vue3-sfc-loader-lite'].loadModule(
+          '/fixtures/features-app.vue',
+          options,
+        )
+        Vue.createApp(component).mount('#app')
+        await new Promise((resolve) => setTimeout(resolve, 50))
+
+        const result = {
+          expr: document.querySelector('#expr').textContent,
+          classText: document.querySelector('#class').textContent,
+          classColor: getComputedStyle(document.querySelector('#class')).color,
+          items: [...document.querySelectorAll('.item')].map((el) => el.textContent),
+          visible: document.querySelector('#cond')?.textContent,
+          hidden: document.querySelector('#else')?.textContent,
+          input: document.querySelector('#input').value,
+          text: document.querySelector('#text').textContent,
+          count: document.querySelector('#count').textContent,
+          setup: document.querySelector('#setup').textContent,
+          computedDynamic: document.querySelector('#computed-dynamic').textContent,
+          slot: document.querySelector('#slot')?.textContent,
+          slotColor: getComputedStyle(document.querySelector('#slot')).color,
+          styles: [...document.querySelectorAll('style')].map((el) => el.textContent).join('\n'),
+        }
+
+        document.querySelector('#toggle').click()
+        document.querySelector('#inline').click()
+        document.querySelector('#computed').click()
+        await new Promise((resolve) => setTimeout(resolve, 200))
+
+        result.afterToggle = {
+          visible: document.querySelector('#cond')?.textContent ?? null,
+          hidden: document.querySelector('#else')?.textContent ?? null,
+          classActive: document.querySelector('#class').classList.contains('active'),
+          count: document.querySelector('#count').textContent,
+          setup: document.querySelector('#setup').textContent,
+          computedDynamic: document.querySelector('#computed-dynamic').textContent,
+        }
+
+        window.__result = result
+      } catch (error) {
+        window.__error = String((error && (error.stack || error.message)) || error)
+      } finally {
+        window.__done = true
+      }
+    })()
+  </script>
+</body>
+</html>
