@@ -177,3 +177,33 @@ export type Options = {
    */
   devMode?: boolean
 }
+
+/**
+ * JSON-serializable output of the admin-side precompiler.
+ *
+ * The client runtime can execute this artifact without parsing/compiling the
+ * original `.vue` source. `script` and `render` are standard ES module sources;
+ * imports are rewritten by the client loader just like normal modules.
+ */
+export type PrecompiledSFC = {
+  /** marker used to detect precompiled artifacts returned by getFile */
+  __vsf_lite_precompiled__: 1
+  /** artifact format version */
+  version: 1
+  /** original SFC filename (used as a stable id / scope id source) */
+  filename: string
+  /** `data-v-xxxxxxxx` scope id used for scoped styles and template compile */
+  scopeId: string
+  /** true when the component has at least one scoped style block */
+  hasScoped: boolean
+  /** compiled script ES module source, or null when the SFC has no script */
+  script: string | null
+  /** compiled template ES module source exporting `render`, or null */
+  render: string | null
+  /** final CSS blocks (scoped CSS is already transformed) */
+  styles: string[]
+  /** custom blocks, passed to options.customBlockHandler on the client */
+  customBlocks: CustomBlock[]
+  /** compiler version that produced this artifact (diagnostics only) */
+  compilerVersion?: string
+}

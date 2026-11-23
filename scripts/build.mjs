@@ -378,4 +378,45 @@ for (const output of outputs) {
 
 await bundle.close()
 
+// ---------------------------------------------------------------------------
+// Admin-side precompiler (separate entry, Node only).
+//
+// `@vue/compiler-sfc` stays external: this entry is used by the admin/server
+// and is never imported by the client runtime. That keeps Babel out of the
+// client bundle while enabling <script setup> at precompile time.
+// ---------------------------------------------------------------------------
+const precompileBundle = await rollup({
+  input: path.join(rootDir, 'src/precompile.ts'),
+  plugins: [
+    esbuild({ target: 'es2020', sourceMap: false, minify: false }),
+    terser({
+      compress: { passes: 2, drop_debugger: true },
+      mangle: true,
+      format: { comments: /^!/ },
+    }),
+  ],
+  external: ['@vue/compiler-sfc'],
+  onwarn,
+})
+
+for (const output of [
+  {
+    file: path.join(rootDir, 'dist/precompile.esm.js'),
+    format: 'es',
+    banner,
+    sourcemap: true,
+  },
+  {
+    file: path.join(rootDir, 'dist/precompile.cjs'),
+    format: 'cjs',
+    exports: 'named',
+    banner,
+    sourcemap: true,
+  },
+]) {
+  await precompileBundle.write(output)
+}
+
+await precompileBundle.close()
+
 console.log(`Built ${pkg.name} v${pkg.version} (Vue compiler ${sfcPkg.version})`)

@@ -15,5 +15,9 @@ Initial release.
 - Import-map support for bare specifiers that are not in `moduleCache`.
 - Lazy dynamic `import()` rewriting, including computed specifiers and recursive
   `defineAsyncComponent(() => import('./Self.vue'))` components.
+- Admin-side `precompileSFC()` entry (`vue3-sfc-loader-lite/precompile`) for
+  `<script setup>` and normal SFCs; artifacts are JSON, executable by the small
+  client runtime via `loadPrecompiled()` or automatic `loadModule()` detection.
+  Babel stays in the admin dependency, never in the client bundle.
 - `compiledCache` for compiled templates and scoped CSS.
 - Node support through `data:` module URLs.

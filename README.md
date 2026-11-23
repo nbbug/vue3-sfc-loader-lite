@@ -7,13 +7,14 @@ for the common "no build step" use case, with a much smaller bundle:
 
 | bundle            | original `vue3-sfc-loader` | `vue3-sfc-loader-lite` |
 | ----------------- | -------------------------: | ---------------------: |
-| minified          |                   ~1794 kB |                ~526 kB |
+| minified          |                   ~1794 kB |                ~530 kB |
 | minified + gzip   |                    ~488 kB |                ~175 kB |
 | minified + brotli |                    ~385 kB |                ~146 kB |
 
-The size improvement comes from removing the JavaScript/TypeScript transpiler
-(Babel) and the style preprocessor pipeline (PostCSS), and from only supporting
-Vue 3.
+The client bundle size improvement comes from removing the runtime
+JavaScript/TypeScript transpiler (Babel) and the style preprocessor pipeline
+(PostCSS), and from only supporting Vue 3. Babel is still used by the optional
+admin-side precompiler, but never by the client runtime.
 
 ## What is different from `vue3-sfc-loader`?
 
@@ -141,6 +142,99 @@ The distributed bundles embed `@vue/compiler-sfc` 3.5.46. Use a compatible Vue
 </script>
 ```
 
+## Admin-side precompile (recommended for `<script setup>`)
+
+The runtime deliberately does not ship Babel, so it cannot compile
+`<script setup>` on the client. Compile it once on the admin/server side and
+store the resulting JSON artifact in your database:
+
+```js
+// admin / Node service
+import {
+  precompileSFC,
+  serializePrecompiled,
+} from 'vue3-sfc-loader-lite/precompile'
+
+const artifact = await precompileSFC(vueSource, {
+  filename: 'components/Hello.vue', // stable id, drives the scoped-style id
+})
+
+await db.save('components/hello', serializePrecompiled(artifact))
+```
+
+On the client, either point `getFile` at the artifact JSON or pass it directly:
+
+```js
+import { loadModule, loadPrecompiled } from 'vue3-sfc-loader-lite'
+
+// A) loadModule auto-detects an artifact returned for a .vue or .json path
+const options = {
+  moduleCache: { vue: Vue },
+  async getFile(url) {
+    // returns the JSON string stored by the admin
+    return await fetch('/api/component' + url).then((res) => res.text())
+  },
+  addStyle(css) {
+    const style = Object.assign(document.createElement('style'), { textContent: css })
+    document.head.appendChild(style)
+  },
+}
+
+const componentA = await loadModule('/components/Hello.vue', options)
+
+// B) or pass the parsed artifact explicitly
+const artifact = await fetch('/api/components/hello').then((res) => res.json())
+const componentB = await loadPrecompiled(artifact, options, '/components/Hello.vue')
+```
+
+Nested components work the same way: precompile each SFC, store each artifact,
+and return the matching artifact JSON from `getFile`. Relative imports are
+resolved by the normal module loader.
+
+`precompileSFC(source, options)` supports:
+
+* `<script setup>` in plain JavaScript, including `defineProps`,
+  `defineEmits`, `defineExpose`, `defineOptions`, `defineSlots`, `defineModel`,
+  `withDefaults`, top-level `await`, and normal `import` statements
+* a normal `<script>` / Options API component
+* templates, slots, directives, `v-model`, ...
+* scoped and ordinary CSS (scoped CSS is compiled on the admin side)
+* custom blocks (stored in the artifact and passed to `customBlockHandler` on
+  the client)
+
+It rejects TypeScript/JSX, style/template preprocessors, CSS Modules,
+`v-bind()` in CSS, and `src="..."` blocks; inline those blocks first.
+
+### Artifact format
+
+`precompileSFC()` returns a JSON-serializable `PrecompiledSFC`:
+
+```ts
+type PrecompiledSFC = {
+  __vsf_lite_precompiled__: 1
+  version: 1
+  filename: string
+  scopeId: string
+  hasScoped: boolean
+  script: string | null   // compiled ES module source
+  render: string | null   // compiled render ES module source
+  styles: string[]        // final CSS (scoped CSS already transformed)
+  customBlocks: CustomBlock[]
+  compilerVersion?: string
+}
+```
+
+The client validates the marker/version, rewrites imports in `script`/`render`,
+composes the component, injects `styles`, and runs custom-block callbacks. No
+SFC parser, Babel or PostCSS is involved on the client for precompiled
+artifacts. If you use only precompiled components, the client does not need
+`'unsafe-eval'` for them (the raw-SFC fallback still uses function-mode
+templates and does).
+
+The precompile entry is separate (`vue3-sfc-loader-lite/precompile`,
+~3.5 kB gzip) and keeps `@vue/compiler-sfc` as an external Node dependency, so
+Babel is never bundled into the client runtime.
+
 ## API
 
 ### `loadModule(path, options): Promise<ModuleExport>`
@@ -150,11 +244,24 @@ component object (the SFC's default export), exactly like `vue3-sfc-loader`.
 
 Use `Vue.defineAsyncComponent()` or `await` at your application boundary.
 
+### `loadPrecompiled(artifact, options, path?)`
+
+Executes a JSON artifact produced by `precompileSFC()` without parsing or
+compiling the original SFC. `artifact` may be the object or its JSON string;
+`path` is the logical path used for relative imports and the module-cache id
+(defaults to `artifact.filename`).
+
+`loadModule()` already auto-detects artifacts returned by `getFile` for `.vue`
+and `.json` paths. `loadPrecompiled()` is useful when the artifact is delivered
+as JSON directly (for example, from a database API) rather than through
+`getFile`.
+
 ### Exports
 
 ```ts
 export {
   loadModule,
+  loadPrecompiled,
   version,
   vueVersion,
   compilerVersion,
@@ -236,8 +343,8 @@ Supported:
 
 Not supported:
 
-- `<script setup>` (it is not plain ESM; it needs Vue's script compiler and
-  Babel's parser)
+- `<script setup>` in a raw runtime `.vue` source (it is not plain ESM). Use
+  admin-side `precompileSFC()`; the client executes the resulting artifact.
 - TypeScript / JSX in scripts or templates
 - `<style lang="scss|less|...">`, CSS Modules, `v-bind()` in CSS
 - `<template lang="pug|...">`
@@ -252,7 +359,7 @@ Not supported:
 
 ### Template compilation and CSP
 
-Templates are compiled by Vue's template compiler in **function mode**
+Raw `.vue` sources are compiled by Vue's template compiler in **function mode**
 (`compileTemplate` with a function-mode compiler), so the generated render
 function resolves bindings through `with (_ctx)`. The render function is
 evaluated with `new Function`. This is what makes complex template expressions
@@ -328,7 +435,7 @@ requirements. A `no-module` fallback is not provided.
 
 ```sh
 npm install
-npm run build       # dist/ + type declarations
+npm run build       # dist/ (runtime + precompile) + type declarations
 npm run test:unit   # unit tests (Node)
 npm run test        # build + unit + Playwright browser tests
 npm run size        # raw / gzip / brotli bundle sizes
@@ -363,8 +470,8 @@ need `@babel/parser`.
    - `export default { ... }`
    - `import ... from './x.js'`
    - no `require`, no `module.exports`, no TypeScript/JSX
-   - replace `<script setup>` with a normal `<script>` (`setup()` is fine) or
-     pre-compile the component.
+   - for `<script setup>`, either use admin-side `precompileSFC()` (recommended)
+     or convert it to a normal `<script>` with `setup()`.
 4. Make sure every `<style>` is plain CSS. Move Sass/Less variables and mixins
    into plain CSS or pre-compile.
 5. Replace `pug`/custom template languages with HTML.

@@ -5,3 +5,4 @@ coverage/
 *.log
 *.tmp.*
 .vitest/
+test/fixtures/*.generated.json

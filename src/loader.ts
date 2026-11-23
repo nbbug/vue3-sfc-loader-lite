@@ -15,6 +15,12 @@ import {
   isBareSpecifier,
 } from './path'
 import { createSFCModule, type SFCCompilationContext } from './sfc'
+import {
+  asPrecompiledSFC,
+  executePrecompiledArtifact,
+  parsePrecompiledArtifact,
+  type PrecompiledModuleContext,
+} from './precompiled'
 import type {
   AbstractPath,
   ContentData,
@@ -22,6 +28,7 @@ import type {
   ModuleExport,
   Options,
   PathContext,
+  PrecompiledSFC,
   Resource,
 } from './types'
 
@@ -182,6 +189,19 @@ const createDynamicImportSupport = (
   return { helperName, getBindingSource }
 }
 
+/** Common module-resolution context used by SFC and precompiled artifacts. */
+const createBaseModuleContext = (
+  options: Options,
+  state: ModuleState,
+  chain: Set<string>,
+): PrecompiledModuleContext => ({
+  options,
+  resolveSpecifier: (specifier, refPath) =>
+    resolveSpecifier(specifier, refPath, options, state, chain),
+  createDynamicImportSupport: (refPath) =>
+    createDynamicImportSupport(options, state, refPath),
+})
+
 const readText = async (
   getContentData: File['getContentData'],
   path: AbstractPath,
@@ -282,12 +302,11 @@ async function createScriptModule(
   chain: Set<string>,
 ): Promise<JSModuleResult> {
   let result: JSModuleResult
+  const context = createBaseModuleContext(options, state, chain)
   try {
     result = await createJSModule(source, path, {
-      resolveSpecifier: (specifier) =>
-        resolveSpecifier(specifier, path, options, state, chain),
-      createDynamicImportSupport: (refPath) =>
-        createDynamicImportSupport(options, state, refPath),
+      resolveSpecifier: (specifier) => context.resolveSpecifier(specifier, path),
+      createDynamicImportSupport: context.createDynamicImportSupport,
     })
   } catch (error: any) {
     if (!error?.message?.includes('Failed to parse ES module')) {
@@ -324,11 +343,27 @@ async function handleModuleInternal(
     case '.vue': {
       clearModuleState(state, id)
       const source = await readText(getContentData, path)
+      const baseContext = createBaseModuleContext(options, state, chain)
+
+      const precompiled = parsePrecompiledArtifact(source)
+      if (precompiled) {
+        const precompiledResult = await executePrecompiledArtifact(
+          precompiled,
+          path,
+          baseContext,
+        )
+        registerModule(
+          state,
+          id,
+          precompiledResult.component,
+          precompiledResult.namespace,
+          precompiledResult.url,
+        )
+        return precompiledResult.component
+      }
 
       const context: SFCCompilationContext = {
-        options,
-        resolveSpecifier: (specifier, refPath) =>
-          resolveSpecifier(specifier, refPath, options, state, chain),
+        ...baseContext,
         loadText: async (pathCx) => {
           const resource = (options.getResource ?? defaultGetResource)(pathCx, options)
           const file = await resource.getContent()
@@ -337,8 +372,6 @@ async function handleModuleInternal(
             path: resource.path,
           }
         },
-        createDynamicImportSupport: (refPath) =>
-          createDynamicImportSupport(options, state, refPath),
         getVueRuntime: async () => {
           const resource = (options.getResource ?? defaultGetResource)(
             { refPath: path, relPath: 'vue' },
@@ -381,6 +414,24 @@ async function handleModuleInternal(
     case '.json': {
       clearModuleState(state, id)
       const source = await readText(getContentData, path)
+
+      const precompiled = parsePrecompiledArtifact(source)
+      if (precompiled) {
+        const precompiledResult = await executePrecompiledArtifact(
+          precompiled,
+          path,
+          createBaseModuleContext(options, state, chain),
+        )
+        registerModule(
+          state,
+          id,
+          precompiledResult.component,
+          precompiledResult.namespace,
+          precompiledResult.url,
+        )
+        return precompiledResult.component
+      }
+
       let value: any
       try {
         value = JSON.parse(source)
@@ -492,17 +543,7 @@ export async function loadModuleInternal(
   }
 }
 
-/**
- * Normalize the public options and load the entry module.
- *
- * @param path The path of the `.vue` file. If it is not a path (e.g. a string
- *   ID), `getFile` must return the content for it.
- * @param options The options. `moduleCache` must be shared by all calls.
- */
-export async function loadModule(
-  path: AbstractPath,
-  options: Options,
-): Promise<ModuleExport> {
+const normalizeOptions = (options: Options): Options => {
   if (options === undefined || options === null) {
     throw new ReferenceError('[vue3-sfc-loader-lite] options is not defined')
   }
@@ -535,9 +576,83 @@ export async function loadModule(
     )
   }
 
+  return normalizedOptions
+}
+
+/**
+ * Normalize the public options and load the entry module.
+ *
+ * @param path The path of the `.vue` file. If it is not a path (e.g. a string
+ *   ID), `getFile` must return the content for it.
+ * @param options The options. `moduleCache` must be shared by all calls.
+ */
+export async function loadModule(
+  path: AbstractPath,
+  options: Options,
+): Promise<ModuleExport> {
+  const normalizedOptions = normalizeOptions(options)
   return await loadModuleInternal(
     { refPath: undefined, relPath: path },
     normalizedOptions,
     new Set(),
   )
+}
+
+/**
+ * Load a precompiled artifact produced by `precompileSFC()` without parsing or
+ * compiling the original `.vue` source.
+ *
+ * `artifact` may be the object itself or its JSON string. `path` is the
+ * logical path used for relative imports and the module cache id (defaults to
+ * `artifact.filename`).
+ */
+export async function loadPrecompiled(
+  artifact: PrecompiledSFC | string,
+  options: Options,
+  path?: AbstractPath,
+): Promise<ModuleExport> {
+  const parsed =
+    typeof artifact === 'string'
+      ? parsePrecompiledArtifact(artifact)
+      : asPrecompiledSFC(artifact)
+
+  if (!parsed) {
+    throw new TypeError(
+      '[vue3-sfc-loader-lite] loadPrecompiled() received an invalid precompiled artifact',
+    )
+  }
+
+  const normalizedOptions = normalizeOptions(options)
+  const moduleCache = normalizedOptions.moduleCache
+  const artifactPath = path ?? parsed.filename
+  const id = artifactPath.toString()
+  const state = getModuleState(moduleCache)
+
+  if (id in moduleCache) {
+    const cached = moduleCache[id]
+    if (cached instanceof Loading) return await cached.promise
+    return cached
+  }
+
+  const chain = new Set<string>([id])
+  const promise = (async (): Promise<ModuleExport> => {
+    const result = await executePrecompiledArtifact(
+      parsed,
+      artifactPath,
+      createBaseModuleContext(normalizedOptions, state, chain),
+    )
+    registerModule(state, id, result.component, result.namespace, result.url)
+    moduleCache[id] = result.component
+    return result.component
+  })()
+
+  const loading = new Loading(promise)
+  moduleCache[id] = loading
+
+  try {
+    return await promise
+  } catch (error) {
+    if (moduleCache[id] === loading) delete moduleCache[id]
+    throw error
+  }
 }

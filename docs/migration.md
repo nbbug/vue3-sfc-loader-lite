@@ -49,13 +49,37 @@ Remove options that only existed to configure Babel or PostCSS:
 | `processStyles` | none – styles must already be plain CSS |
 | `buildTemplateProcessor` | none – templates must already be plain HTML |
 | `createCJSModule` | none – scripts are native ES modules |
-| `<script setup>` | use a normal `<script>` with `setup()` |
+| `<script setup>` | use admin-side `precompileSFC()`, or a normal `<script>` with `setup()` |
 | `lang="ts"` / `lang="jsx"` | pre-compile to JavaScript |
 | `<style lang="scss">` | pre-compile to CSS |
 | `<template lang="pug">` | pre-compile to HTML |
 
 Everything else (`delimiters`, `whitespace`, `isCustomElement`, `devMode`,
 `pathResolve`, `getPathname`, `getResource`, `loadModule` hook) is supported.
+
+## 3. Precompile `<script setup>` (recommended)
+
+The runtime does not ship Babel, so `<script setup>` must be compiled once on
+the admin/server side:
+
+```js
+import { precompileSFC, serializePrecompiled } from 'vue3-sfc-loader-lite/precompile'
+
+const artifact = await precompileSFC(vueSource, { filename: 'Hello.vue' })
+await db.save('hello', serializePrecompiled(artifact))
+```
+
+On the client, `loadModule()` auto-detects artifact JSON returned by `getFile`
+for `.vue`/`.json` paths, or you can call
+`loadPrecompiled(artifact, options, path)`. Nested precompiled components work
+the same way; store each artifact and return it from `getFile`.
+
+Supported by the precompiler: JS `<script setup>` (all standard macros), normal
+`<script>`, HTML templates, scoped/plain CSS and custom blocks. TypeScript/JSX,
+preprocessors, CSS Modules, `v-bind()` CSS and `src="..."` blocks are rejected.
+
+Precompiled artifacts are pure ESM + CSS, so they do not need `'unsafe-eval'`
+on the client. The raw-`.vue` fallback path does.
 
 ## 3. Make scripts standard ESM
 
@@ -86,7 +110,8 @@ Rules:
 
 * `import` / `export` only (no `require`, no `module.exports`).
 * No TypeScript or JSX syntax.
-* No `<script setup>` (it requires Vue's script compiler and Babel parser).
+* No `<script setup>` in raw runtime `.vue` sources. Precompile it on the admin
+  side with `precompileSFC()` and load the resulting artifact on the client.
 * Static import cycles are not supported. Use
   `Vue.defineAsyncComponent(() => import('./Child.vue'))` for recursive
   components.
@@ -172,8 +197,8 @@ continues when possible (for example, to report a more precise template error).
 
 ## Compatibility checklist
 
-- [ ] Every `.vue` script is standard ESM.
-- [ ] No `<script setup>`; `setup()` is used instead if needed.
+- [ ] Every runtime `.vue` script is standard ESM.
+- [ ] `<script setup>` is precompiled with `precompileSFC()` (or converted to `setup()`).
 - [ ] No TypeScript/JSX.
 - [ ] Every style block is plain CSS.
 - [ ] Every template is HTML.

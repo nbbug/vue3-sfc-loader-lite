@@ -28,6 +28,12 @@
       "require": "./dist/vue3-sfc-loader-lite.cjs",
       "default": "./dist/vue3-sfc-loader-lite.esm.js"
     },
+    "./precompile": {
+      "types": "./dist/types/precompile.d.ts",
+      "import": "./dist/precompile.esm.js",
+      "require": "./dist/precompile.cjs",
+      "default": "./dist/precompile.esm.js"
+    },
     "./dist/*": "./dist/*",
     "./package.json": "./package.json"
   },
@@ -59,7 +65,6 @@
     "@rollup/plugin-replace": "^6.0.3",
     "@rollup/plugin-terser": "^1.0.2",
     "@types/node": "^26.6.6",
-    "@vue/compiler-sfc": "3.5.46",
     "es-module-lexer": "3.0.5",
     "playwright-core": "^1.65.1",
     "rimraf": "^6.1.4",
@@ -78,5 +83,8 @@
     "Firefox ESR",
     "not dead",
     "supports es6-module and supports dynamic-import"
-  ]
+  ],
+  "dependencies": {
+    "@vue/compiler-sfc": "3.5.46"
+  }
 }

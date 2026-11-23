@@ -1,8 +1,10 @@
 import { existsSync, readdirSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright-core'
+import { precompileSFC } from '../../src/precompile'
 import { startTestServer, type TestServer } from './server'
 
 let server: TestServer
@@ -82,6 +84,19 @@ const runScene = async (scene: string): Promise<SceneResult> => {
 }
 
 beforeAll(async () => {
+  // The admin-side precompiler runs here (Node), not in the browser runtime.
+  const source = await readFile(
+    new URL('../fixtures/precompiled-source.vue', import.meta.url),
+    'utf8',
+  )
+  const artifact = await precompileSFC(source, {
+    filename: '/fixtures/precompiled-app.vue',
+  })
+  await writeFile(
+    new URL('../fixtures/precompiled-app.generated.json', import.meta.url),
+    JSON.stringify(artifact),
+  )
+
   server = await startTestServer()
   browser = await chromium.launch({
     executablePath: findChromium(),
@@ -106,6 +121,7 @@ describe('browser integration', () => {
       'buildTemplateProcessor',
       'compilerVersion',
       'loadModule',
+      'loadPrecompiled',
       'version',
       'vueVersion',
     ])
@@ -210,6 +226,22 @@ describe('browser integration', () => {
     })
   })
 
+
+
+  it('executes an admin-precompiled <script setup> artifact with the client runtime', async () => {
+    const { error, result, console: logs } = await runScene('fixtures/precompiled.html')
+    expect(error, logs.join('\n')).toBeNull()
+
+    expect(result.text.replace(/\s+/g, '')).toBe('admin21')
+    expect(result.color).toBe('rgb(255, 0, 0)')
+    expect(result.scopeId).toBe(result.artifactScopeId)
+    expect(result.hasLoadPrecompiled).toBe(true)
+    expect(result.afterClick).toBe('4')
+    expect(result.cacheKeys).toEqual([
+      '/fixtures/precompiled-app.vue',
+      'vue',
+    ])
+  })
 
   it('supports recursive lazy dynamic imports', async () => {
     const { error, result, console: logs } = await runScene('fixtures/recursive.html')
