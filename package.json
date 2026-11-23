@@ -1,6 +1,6 @@
 {
   "name": "vue3-sfc-loader-lite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A lightweight Vue 3 Single File Component loader for the browser. No Babel, no PostCSS: scripts are plain ES modules and styles are plain CSS.",
   "keywords": [
     "vue",
