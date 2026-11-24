@@ -1,7 +1,7 @@
-import { loadModule, loadPrecompiled } from './loader'
+import { loadModule } from './loader'
 import { version, vueVersion } from './version'
 
-export { loadModule, loadPrecompiled, version, vueVersion }
+export { loadModule, version, vueVersion }
 export * from './types'
 
 /**

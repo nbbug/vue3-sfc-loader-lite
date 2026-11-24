@@ -28,8 +28,8 @@
           if (url === '/bad-template.vue') {
             return '<template><div v-if></div></template>'
           }
-          if (url === '/setup.vue') {
-            return '<script setup>const x = 1<\/script>'
+          if (url === '/ts.vue') {
+            return '<script setup lang="ts">const x: number = 1<\/script>'
           }
           if (url === '/missing.vue') {
             const response = await fetch(url)
@@ -52,11 +52,11 @@
       }
 
       try {
-        await window['vue3-sfc-loader-lite'].loadModule('/setup.vue', baseOptions())
-        results.setupRejected = false
+        await window['vue3-sfc-loader-lite'].loadModule('/ts.vue', baseOptions())
+        results.tsRejected = false
       } catch (error) {
-        results.setupRejected = true
-        results.setupError = String(error.message)
+        results.tsRejected = true
+        results.tsError = String(error.message)
       }
 
       try {

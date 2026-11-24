@@ -49,7 +49,7 @@ Remove options that only existed to configure Babel or PostCSS:
 | `processStyles` | none – styles must already be plain CSS |
 | `buildTemplateProcessor` | none – templates must already be plain HTML |
 | `createCJSModule` | none – scripts are native ES modules |
-| `<script setup>` | use admin-side `precompileSFC()`, or a normal `<script>` with `setup()` |
+| `<script setup>` | supported at runtime (plain JavaScript) |
 | `lang="ts"` / `lang="jsx"` | pre-compile to JavaScript |
 | `<style lang="scss">` | pre-compile to CSS |
 | `<template lang="pug">` | pre-compile to HTML |
@@ -57,31 +57,13 @@ Remove options that only existed to configure Babel or PostCSS:
 Everything else (`delimiters`, `whitespace`, `isCustomElement`, `devMode`,
 `pathResolve`, `getPathname`, `getResource`, `loadModule` hook) is supported.
 
-## 3. Precompile `<script setup>` (recommended)
+## 3. `<script setup>` works at runtime
 
-The runtime does not ship Babel, so `<script setup>` must be compiled once on
-the admin/server side:
+Plain-JavaScript `<script setup>` is compiled on the client by
+`compileScript`. TypeScript/JSX are not transpiled, so
+`<script setup lang="ts">` is still rejected.
 
-```js
-import { precompileSFC, serializePrecompiled } from 'vue3-sfc-loader-lite/precompile'
-
-const artifact = await precompileSFC(vueSource, { filename: 'Hello.vue' })
-await db.save('hello', serializePrecompiled(artifact))
-```
-
-On the client, `loadModule()` auto-detects artifact JSON returned by `getFile`
-for `.vue`/`.json` paths, or you can call
-`loadPrecompiled(artifact, options, path)`. Nested precompiled components work
-the same way; store each artifact and return it from `getFile`.
-
-Supported by the precompiler: JS `<script setup>` (all standard macros), normal
-`<script>`, HTML templates, scoped/plain CSS and custom blocks. TypeScript/JSX,
-preprocessors, CSS Modules, `v-bind()` CSS and `src="..."` blocks are rejected.
-
-Precompiled artifacts are pure ESM + CSS, so they do not need `'unsafe-eval'`
-on the client. The raw-`.vue` fallback path does.
-
-## 3. Make scripts standard ESM
+## 4. Make scripts standard ESM
 
 Before (Babel/CJS-style, not supported):
 
@@ -110,8 +92,6 @@ Rules:
 
 * `import` / `export` only (no `require`, no `module.exports`).
 * No TypeScript or JSX syntax.
-* No `<script setup>` in raw runtime `.vue` sources. Precompile it on the admin
-  side with `precompileSFC()` and load the resulting artifact on the client.
 * Static import cycles are not supported. Use
   `Vue.defineAsyncComponent(() => import('./Child.vue'))` for recursive
   components.
@@ -125,7 +105,7 @@ attributes/options on dynamic imports are ignored.
 `import.meta.url` points at the generated `blob:`/`data:` URL, not at the
 original `.vue` file. Use `getFile()` paths or absolute URLs for assets.
 
-## 4. Make styles plain CSS
+## 5. Make styles plain CSS
 
 ```html
 <!-- not supported -->
@@ -158,7 +138,7 @@ Not supported in styles:
 * full CSS validation (invalid CSS is injected as-is; use your browser's
   devtools instead of expecting PostCSS-style errors)
 
-## 5. Template expectations
+## 6. Template expectations
 
 Templates are plain HTML. Asset URLs are kept literal; they are not transformed
 into imports:
@@ -171,15 +151,15 @@ This means the browser requests `./logo.png` relative to the current page, not
 relative to the `.vue` file. Use a URL that is valid from the page, or set the
 asset path yourself.
 
-## 6. CSP
+## 7. CSP
 
-Scripts are native ES modules loaded from `blob:` URLs (browsers) or `data:`
-URLs (Node). Templates are compiled in function mode and evaluated with
-`new Function`, so the page needs `'unsafe-eval'`. The original loader also used
-`Function` for generated scripts, so that part is familiar; the lite loader
-additionally requires `blob:` in `script-src` for the generated ES modules.
+Compiled modules are loaded from `blob:` URLs (browsers) or `data:` URLs (Node),
+so `script-src` must include `blob:` (and `data:` under Node). The runtime does
+not use `new Function` to evaluate templates; the tested normal path does not
+require `'unsafe-eval'`.
 
-## 7. Error messages
+
+## 8. Error messages
 
 Error categories passed to `log` remain similar:
 
@@ -198,12 +178,12 @@ continues when possible (for example, to report a more precise template error).
 ## Compatibility checklist
 
 - [ ] Every runtime `.vue` script is standard ESM.
-- [ ] `<script setup>` is precompiled with `precompileSFC()` (or converted to `setup()`).
+- [ ] Plain-JavaScript `<script setup>` is acceptable (TypeScript/JSX are not).
 - [ ] No TypeScript/JSX.
 - [ ] Every style block is plain CSS.
 - [ ] Every template is HTML.
 - [ ] No static circular imports.
-- [ ] CSP allows `'unsafe-eval'` and blob/data module URLs.
+- [ ] CSP allows blob/data module URLs (`'unsafe-eval'` is not required for the normal path).
 - [ ] `moduleCache` contains `vue` and is shared between all calls.
 - [ ] `addStyle` is provided if components have styles.
 - [ ] Assets use URLs that are valid from the page.

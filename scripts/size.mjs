@@ -10,8 +10,6 @@ const files = [
   'dist/vue3-sfc-loader-lite.js',
   'dist/vue3-sfc-loader-lite.esm.js',
   'dist/vue3-sfc-loader-lite.cjs',
-  'dist/precompile.esm.js',
-  'dist/precompile.cjs',
 ]
 
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} kB`

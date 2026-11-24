@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadModule } from '../../src/index'
+import * as VueRuntime from 'vue'
+import { createSSRApp } from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import { Loading } from '../../src/loading'
 import type { Cache, Options } from '../../src/types'
 
@@ -309,13 +312,45 @@ describe('compiledCache', () => {
 })
 
 describe('errors and unsupported features', () => {
-  it('rejects <script setup> with a clear message', async () => {
-    const options = createOptions({
-      '/App.vue': `<script setup>const x = 1</script>`,
-    })
-    await expect(loadModule('/App.vue', options)).rejects.toThrow(
-      /<script setup> is not supported/,
-    )
+  it('compiles and runs <script setup> at runtime', async () => {
+    const styles: { css: string; scopeId?: string }[] = []
+    const options: Options = {
+      moduleCache: { vue: VueRuntime },
+      async getFile() {
+        return `
+          <template>
+            <div class="setup">
+              <span class="label">{{ label }}</span>
+              <span class="doubled">{{ doubled }}</span>
+              <button class="inc" @click="inc">{{ count }}</button>
+            </div>
+          </template>
+          <script setup>
+            import { computed, ref } from 'vue'
+            defineProps({ label: { type: String, default: 'default' } })
+            const count = ref(1)
+            const doubled = computed(() => count.value * 2)
+            function inc() { count.value += 1 }
+          </script>
+          <style scoped>.setup { color: rgb(255, 0, 0); }</style>
+        `
+      },
+      addStyle(css, scopeId) {
+        styles.push({ css, scopeId })
+      },
+    }
+
+    const component = await loadModule('/SetupRuntime.vue', options)
+    expect(component.__name).toBe('SetupRuntime')
+    expect(component.__scopeId).toMatch(/^data-v-/)
+    expect(styles).toHaveLength(1)
+
+    const html = await renderToString(createSSRApp(component, { label: 'runtime' }))
+    expect(html).toContain('class="setup"')
+    expect(html).toContain('>runtime<')
+    expect(html).toContain('>2<')
+    expect(html).toContain('>1<')
+    expect(html).toContain(component.__scopeId)
   })
 
   it('rejects TypeScript/JSX scripts', async () => {
@@ -323,7 +358,7 @@ describe('errors and unsupported features', () => {
       '/App.vue': `<script lang="ts">export default {}</script>`,
     })
     await expect(loadModule('/App.vue', options)).rejects.toThrow(
-      /Only plain JavaScript ES modules are accepted/,
+      /Only plain JavaScript/,
     )
   })
 

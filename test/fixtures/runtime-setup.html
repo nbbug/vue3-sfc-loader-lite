@@ -2,7 +2,8 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>vue3-sfc-loader-lite - precompiled artifact</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'">
+  <title>vue3-sfc-loader-lite - runtime script setup</title>
 </head>
 <body>
   <div id="app"></div>
@@ -22,17 +23,9 @@
 
     ;(async () => {
       try {
-        const artifactResponse = await fetch('/fixtures/precompiled-app.generated.json')
-        if (!artifactResponse.ok) throw new Error('artifact fetch failed')
-        const artifactText = await artifactResponse.text()
-        const artifact = JSON.parse(artifactText)
-
         const options = {
           moduleCache: { vue: Vue },
           async getFile(url) {
-            if (url === '/fixtures/precompiled-app.vue') {
-              return artifactText
-            }
             const response = await fetch(url)
             if (!response.ok) throw new Error(response.status + ' ' + url)
             return await response.text()
@@ -44,11 +37,11 @@
         }
 
         const component = await window['vue3-sfc-loader-lite'].loadModule(
-          '/fixtures/precompiled-app.vue',
+          '/fixtures/runtime-setup.vue',
           options,
         )
         Vue.createApp({
-          render: () => Vue.h(component, { label: 'admin' }),
+          render: () => Vue.h(component, { label: 'runtime-setup' }),
         }).mount('#app')
 
         await new Promise((resolve) => setTimeout(resolve, 50))
@@ -57,9 +50,6 @@
           text: document.querySelector('#app').textContent.trim(),
           color: getComputedStyle(document.querySelector('.pc')).color,
           scopeId: component.__scopeId,
-          artifactScopeId: artifact.scopeId,
-          hasLoadPrecompiled:
-            typeof window['vue3-sfc-loader-lite'].loadPrecompiled === 'function',
           cacheKeys: Object.keys(options.moduleCache).sort(),
         }
 

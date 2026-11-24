@@ -10,7 +10,7 @@
 import { computed, ref } from 'vue'
 
 defineProps({
-  label: { type: String, default: 'precompiled' },
+  label: { type: String, default: 'runtime' },
 })
 
 const count = ref(1)
